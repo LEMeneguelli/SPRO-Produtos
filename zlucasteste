@@ -1,0 +1,1076 @@
+*&---------------------------------------------------------------------*
+*& Report  ZLUCASTESTE
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+REPORT zlucasteste.
+
+
+TABLES: vbak.
+*&----------------------------------------------------
+* INCLUDES
+*&----------------------------------------------------
+INCLUDE ole2incl.
+*&----------------------------------------------------
+*&   TYPES
+*&----------------------------------------------------
+TYPE-POOLS : abap.
+TYPES: BEGIN OF ty_titles,
+         title(20) TYPE c,
+         field(20) TYPE c,
+       END OF ty_titles,
+
+       BEGIN OF ty_string,
+         line TYPE string,
+       END OF ty_string.
+*&----------------------------------------------------
+*&   INTERNAL TABLES
+*&----------------------------------------------------
+DATA: t_titles TYPE STANDARD TABLE OF ty_titles.
+FIELD-SYMBOLS: <dyn_table> TYPE STANDARD TABLE,
+               <dyn_wa>,
+               <dyn_field>.
+DATA: dy_table TYPE REF TO data,
+      dy_line  TYPE REF TO data.
+*&----------------------------------------------------
+*&   FIELD-SYMBOLS
+*&----------------------------------------------------
+FIELD-SYMBOLS: <fs_titles> LIKE LINE OF t_titles,
+               <fs>        TYPE any.
+*&----------------------------------------------------
+*&   VARIABLES
+*&----------------------------------------------------
+DATA: w_tabix  TYPE sy-tabix,
+      w_titles TYPE sy-tabix,
+      w_line   TYPE sy-tabix,
+      w_field  TYPE string,
+      filename TYPE string,
+      path     TYPE string,
+      fullpath TYPE string.
+DATA: data_titles TYPE REF TO data.
+DATA: e_sheet       TYPE ole2_object,
+      e_activesheet TYPE ole2_object,
+      e_newsheet    TYPE ole2_object,
+      e_appl        TYPE ole2_object,
+      e_work        TYPE ole2_object,
+      e_cell        TYPE ole2_object,
+      e_color       TYPE ole2_object,
+      e_bold        TYPE ole2_object.
+*&----------------------------------------------------
+*&   SELECTION-SCREEN
+*&----------------------------------------------------
+*SELECTION-SCREEN BEGIN OF BLOCK b1.
+*PARAMETERS: p_file TYPE burks |MODIF ID
+*            p_tab  TYPE dd02l-tabname MODIF ID mi1.
+*SELECTION-SCREEN END OF BLOCK b1.
+**&----------------------------------------------------
+**&  START-OF-SELECTION
+**&----------------------------------------------------
+*START-OF-SELECTION.
+*  PERFORM get_titles.
+*  PERFORM get_data.
+*  PERFORM create_excel.
+**&----------------------------------------------------
+**& AT SELECTION-SCREEN
+**&----------------------------------------------------
+*AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+*  CALL METHOD cl_gui_frontend_services=>file_save_dialog
+*    EXPORTING
+*      window_title      = 'Select archivo'
+*      default_extension = 'xls'
+*      file_filter       = '*.xls'
+*    CHANGING
+*      filename          = filename
+*      path              = path
+*      fullpath          = fullpath.
+*  IF sy-subrc EQ 0.
+*    p_file = fullpath.
+*  ENDIF.
+**&----------------------------------------------------
+**&      Form  get_titles
+**&----------------------------------------------------
+*FORM get_titles.
+*  DATA: it_dd03p LIKE STANDARD TABLE OF dd03p WITH HEADER LINE.
+* DATA: it_fcat TYPE lvc_t_fcat,
+*            ifc TYPE lvc_t_fcat WITH HEADER LINE.
+*  CREATE DATA data_titles TYPE ty_titles.
+*  ASSIGN data_titles->* TO <fs_titles>.
+*    CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+*    EXPORTING
+*      i_structure_name       = p_tab
+*    CHANGING
+*      ct_fieldcat            = it_fcat
+*    EXCEPTIONS
+*      inconsistent_interface = 1
+*      program_error          = 2
+*      OTHERS                 = 3.
+*  ifc[] = it_fcat[].
+*  LOOP AT ifc.
+*    IF NOT ifc-fieldname CA '.'.
+*      <fs_titles>-title = ifc-scrtext_m.
+*      <fs_titles>-field = ifc-fieldname.
+*      APPEND <fs_titles> TO t_titles.
+*    ENDIF.
+*  ENDLOOP.
+** Create Internal Table
+*  CALL METHOD cl_alv_table_create=>create_dynamic_table
+*    EXPORTING
+*      it_fieldcatalog = it_fcat
+*    IMPORTING
+*      ep_table        = dy_table.
+*  ASSIGN dy_table->* TO <dyn_table>.
+** create dynamic work area and assign to fs
+*  CREATE DATA dy_line LIKE LINE OF <dyn_table>.
+*  ASSIGN dy_line->* TO <dyn_wa>.
+*ENDFORM.                    "get_titles
+**&----------------------------------------------------
+**&      Form  get_data
+**&----------------------------------------------------
+*FORM get_data.
+*  SELECT * INTO TABLE <dyn_table>
+*               UP TO 10 ROWS
+*               FROM (p_tab)
+*                WHERE tkonn EQ '0000001434'.
+*
+*ENDFORM.                    " get_data
+**&----------------------------------------------------
+**&      Form  create_excel
+**&----------------------------------------------------
+*FORM create_excel.
+*  w_line = 1.
+*  CREATE OBJECT e_appl 'EXCEL.APPLICATION'.
+*  SET PROPERTY OF e_appl 'VISIBLE' = 1.
+*  CALL METHOD OF e_appl 'WORKBOOKS' = e_work.
+*  CALL METHOD OF e_work 'Add' = e_work.
+*  GET PROPERTY OF e_appl 'ActiveSheet' = e_activesheet.
+*  SET PROPERTY OF e_activesheet 'Name' = 'Flights'.
+*  LOOP AT <dyn_table> ASSIGNING <dyn_wa>.
+*    w_tabix = sy-tabix.
+*    w_line = w_line + 1.
+*    LOOP AT t_titles ASSIGNING <fs_titles>.
+*      w_titles = sy-tabix.
+*      CALL METHOD OF e_appl 'Cells' = e_cell
+*        EXPORTING
+*        #1 = 1
+*        #2 = w_titles.
+*      SET PROPERTY OF e_cell 'Value' =  <fs_titles>-title.
+*      GET PROPERTY OF e_cell 'Interior' = e_color.
+*      SET PROPERTY OF e_color 'ColorIndex' = 38.
+*      GET PROPERTY OF e_cell 'Font' = e_bold.
+*      SET PROPERTY OF e_bold 'Bold' = 1.
+*      CALL METHOD OF e_appl 'Cells' = e_cell
+*        EXPORTING
+*        #1 = w_line
+*        #2 = w_titles.
+*      CONCATENATE '<dyn_wa>-' <fs_titles>-field INTO w_field.
+*      ASSIGN (w_field) TO <fs>.
+*      SET PROPERTY OF e_cell 'Value' = <fs>.
+*      GET PROPERTY OF e_cell 'Interior' = e_color.
+*      SET PROPERTY OF e_cell 'ColumnWidth' = 20.
+*      SET PROPERTY OF e_color 'ColorIndex' = 0.
+*      GET PROPERTY OF e_cell 'Font' = e_bold.
+*      SET PROPERTY OF e_bold 'Bold' = 0.
+*    ENDLOOP.
+*  ENDLOOP.
+*  CALL METHOD OF e_work 'SAVEAS'
+*    EXPORTING
+*    #1 = p_file.
+*  CALL METHOD OF e_work 'close'.
+*  CALL METHOD OF e_appl 'QUIT'.
+*  FREE OBJECT e_appl.
+*ENDFORM.                    " create_excel.
+
+TYPES: BEGIN OF ty_excel,
+         aufnr TYPE aufk-aufnr,
+       END OF ty_excel,
+
+       BEGIN OF ty_caufv,
+         aufnr TYPE aufk-aufnr,
+         aufpl TYPE caufv-aufpl,
+       END OF ty_caufv,
+
+       BEGIN OF ty_operacao,
+         aufpl     TYPE afvc-aufpl,
+         aplzl     TYPE afvc-aplzl,
+         vornr     TYPE afvc-vornr,
+         werks     TYPE afvc-werks,
+         ltxa1     TYPE afvc-ltxa1,
+         larnt     TYPE afvc-larnt,
+         objnr     TYPE afvc-objnr,
+         meinh     TYPE afvv-meinh,
+         mgvrg     TYPE afvv-mgvrg,
+         sld_estoq TYPE afvv-mgvrg,
+         os_saida  TYPE c,
+       END OF ty_operacao,
+
+       BEGIN OF ty_status,
+         objnr TYPE jest-objnr,
+         stat  TYPE jest-stat,
+         inact TYPE jest-inact,
+       END OF ty_status.
+
+DATA: t_table    TYPE TABLE OF string,
+      t_data_ex  TYPE TABLE OF alsmex_tabline,
+      t_excel    TYPE TABLE OF ty_excel,
+      wa_excel   TYPE ty_excel,
+      t_operacao TYPE TABLE OF ty_operacao.
+
+FIELD-SYMBOLS: <fs_excel> LIKE LINE OF t_excel.
+
+*PARAMETERS:  p_spmon TYPE spmon.
+*PARAMETERS:  p_arq  TYPE localfile,
+*             p_para TYPE localfile.
+
+*INITIALIZATION.
+
+*AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_arq.
+*  PERFORM f_busca_arquivo USING p_arq.
+*
+*AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_para.
+*  PERFORM f_busca_arquivo USING p_para.
+*  SELECT-OPTIONS:  s_vtweg FOR vbak-vtweg.
+AT SELECTION-SCREEN OUTPUT.
+
+*  IF ( p_file IS NOT INITIAL ).
+*
+*  ENDIF.
+
+
+START-OF-SELECTION.
+
+  DATA lr_data TYPE REF TO data.
+  DATA(v_type) = 'SYDATUM'.
+
+  CREATE DATA lr_data TYPE (v_type).
+
+  DATA(lr_type) = cl_abap_typedescr=>describe_by_name( v_type ).
+
+  BREAK-POINT.
+
+*  DATA: lv_temp_qty TYPE p DECIMALS 2,
+*        lv_decimal  TYPE p DECIMALS 2.
+*
+*  CONSTANTS: lc_decimal     TYPE p DECIMALS 2 VALUE '0.5'.
+*
+*  lv_temp_qty = 19 - lc_decimal.
+*
+*  lv_decimal = frac( lv_temp_qty ).
+*
+*  WRITE: lv_temp_qty.
+*
+*  IF ( lv_decimal        EQ lc_decimal )..
+*    WRITE: lv_decimal.
+*  ENDIF.
+
+
+*  DATA: lw_floor  TYPE CPET_INTERNAL_VALUE VALUE '10.012361456',
+*        ld_result TYPE /accgo/e_price_in_raw,
+*        c         TYPE char10 VALUE '4',
+*        i         TYPE i VALUE '4',
+*        v_var     TYPE string VALUE '842567123'.
+
+
+*   WRITE  sy-abcde+18(1).
+*   WRITE  sy-abcde+19(1).
+*   WRITE  sy-abcde+20(1).
+*   WRITE  sy-abcde+21(1).
+*   WRITE  sy-abcde+22(1).
+*   WRITE  sy-abcde+23(1).
+
+*  IF v_var CO '0123456789'.
+*
+*    WRITE: 'success'.
+*
+*  ELSE.
+*
+*    WRITE:/ 'error message'.
+*
+*  ENDIF.
+
+*  TRY .
+*      i = c.
+*    CATCH  cx_sy_conversion_no_number.
+* WRITE:/ 'error message'.
+*  ENDTRY.
+*
+*
+*  lw_floor = '0.12345678906'.
+*
+*  CONDENSE c NO-GAPS.
+*
+*  IF ( c CN sy-abcde ).
+*    WRITE 'Numero'.
+*  ENDIF.
+*
+*  WRITE / lw_floor.
+*
+*  lw_floor = round( val = lw_floor dec = i ).
+*
+*  WRITE / lw_floor.
+
+*  NEW /ACCGO/CL_TRP_BR_APP_LOGIC_BL( ).
+
+*    DATA lv_teste  TYPE c LENGTH 20.
+*  concatenate ICON_EXECUTE_OBJECT
+*ICON_SELECT_DETAIL
+* INTO lv_teste separated by space.
+*
+*  lv_teste = ICON_EXECUTE_OBJECT.
+*  lv_teste+5(4) = ICON_SELECT_DETAIL.
+*
+*  IF ( sy-subrc IS INITIAL ).
+*
+*  ENDIF.
+
+*  DATA: vl_task   TYPE char10 VALUE '1',
+*        wl_uishdr TYPE  /accgo/t_uishdr,
+*        wl_wbhk   TYPE  wbhk.
+*  CALL FUNCTION '/SPROCV83/F_CREATE_BILLING' STARTING NEW TASK vl_task
+*    EXPORTING
+*      iv_vbeln  = '0080002420'
+*      iw_uishdr = wl_uishdr
+*      iw_wbhk   = wl_wbhk.
+
+
+*  call SCREEN 9000.
+
+*  DATA: t_teste TYPE TABLE OF string,
+*        lt_cv83                 TYPE /sprocv83/cl_cv83_db=>tp_t_cv83,
+*        ol_badi_save_after_cv83 TYPE REF TO /sprocv83/badi_save_cv83.
+*
+*
+*  GET BADI ol_badi_save_after_cv83.
+*
+*  IF ( ol_badi_save_after_cv83 IS BOUND ).
+*
+*    CALL BADI ol_badi_save_after_cv83->after_save
+*      EXPORTING
+*        it_cv83 = lt_cv83.
+*
+*  ENDIF.
+*
+*  WRITE sy-abcde+4(1).
+*  WRITE sy-abcde+18(1).
+
+*  TRY.
+*
+*      READ TABLE t_teste ASSIGNING FIELD-SYMBOL(<fs_teste>) INDEX 3.
+*
+*      data(vl_teste) = <fs_teste>.
+*
+*    CATCH cx_root.
+*
+*  ENDTRY.
+
+*  DATA: lv_where      TYPE string.
+*
+* DATA: rl_disapproved TYPE RANGE OF j_1bnfe_active-docsta.
+*
+*    rl_disapproved =  VALUE #( sign   = /sprocv83/if_constantes=>c_sing-i
+*                                option = /sprocv83/if_constantes=>c_option-eq ( low = '2' ) ( low = '3' ) ).
+*
+*  FIELD-SYMBOLS: <lt_table> TYPE ANY TABLE.
+*
+*  WRITE sy-datum.
+
+*  ASSIGN COMPONENT 'WERKS' OF STRUCTURE <lt_table> TO <CAMPO>.
+
+*  LOOP AT <lt_table>[] ASSIGNING FIELD-SYMBOL(<lfs_line>).
+*    DELETE TABLE <lt_table>[] FROM <lfs_line>.
+*
+*  ENDLOOP.
+*
+*  lv_where = 'concluido EQ @abap_true'.
+*  SELECT *
+*    FROM /sproagbl/t_ldda
+**        FOR ALL ENTRIES IN @lt_j_1bnfdoc
+*    WHERE docnum EQ '12312'
+*      AND (lv_where)
+*  INTO TABLE @DATA(lt_ldda).
+*
+*  IF ( sy-subrc IS INITIAL ).
+*
+*  ENDIF.
+
+*DATA: r_vtweg type RANGE OF vbak-vtweg.
+*field-symbols: <fs_canal> like r_vtweg.
+*
+*  ASSIGN ('(ZLUCASTESTE)s_vtweg[]') TO <fs_canal>.
+*
+*  DATA: nfnum TYPE j_1bnfdoc-nfnum VALUE '1231',
+*        series TYPE j_1bnfdoc-series VALUE '123'.
+*
+*    SELECT *
+*      FROM /accgo/t_brdiffa
+*      INTO TABLE @data(rt_brdiffa).
+*
+*  DELETE rt_brdiffa WHERE ref_trp_group IS NOT INITIAL.
+*
+*  DATA(nfe_dev-nfe) = |{ nfnum }| & |-| & |{ series }| .
+*  WRITE nfe_dev-nfe.
+**  DATA: lwa_fad_selection   TYPE /accgo/cas_s_selection,
+*        wa_ret_doc_selected TYPE /accgo/cas_s_mwc_ret_doc_ui,
+*        lt_fad_data         TYPE /accgo/cas_tt_return_fads,
+*        lt_return_asgmt_bl  TYPE /accgo/cas_tt_return_asgmt_bl,
+*        lo_protocol         TYPE REF TO /accgo/cl_cas_appl_protocol,
+*        wa_appldoc          TYPE /accgo/cas_s_appldoc_range,
+*        lwa_selection       TYPE /accgo/cas_s_ret_param,
+*        lv_ans              TYPE sy-ucomm.
+*
+*  lwa_selection-appldoc = '1000000528'.
+*  CALL FUNCTION '/ACCGO/CAS_RETURN_FAD_SEL'
+*    EXPORTING
+*      im_s_selection = lwa_selection
+*    IMPORTING
+*      ex_s_selection = lwa_fad_selection
+*      ex_answer      = lv_ans.
+*
+*  PERFORM get_fads_for_rad TABLES lt_fad_data
+*                                  lt_return_asgmt_bl
+*                           USING lwa_fad_selection
+*                                 wa_ret_doc_selected
+*                          CHANGING lo_protocol.
+
+*  DATA(go_MWC_RETURNS_BL) = new /ACCGO/CL_CAS_MWC_RETURNS_BL( ).
+*
+* go_MWC_RETURNS_BL->get_fads_for_rad( EXPORTING im_s_selection_data   = lwa_fad_selection
+*                                                im_s_rad_data         = wa_ret_doc_selected
+*                                      IMPORTING ex_t_fad_data         = lt_fad_data
+*                                                ex_t_return_asgmt_bl  = lt_return_asgmt_bl
+*                                                ex_o_protocol         = lo_protocol        ).
+
+*  IF ( sy-subrc IS INITIAL ).
+*
+*  ENDIF.
+
+
+
+FORM get_fads_for_rad TABLES ex_t_fad_data        TYPE /accgo/cas_tt_return_fads
+                             ex_t_return_asgmt_bl TYPE /accgo/cas_tt_return_asgmt_bl
+                      USING  im_s_selection_data  TYPE /accgo/cas_s_selection
+                             im_s_rad_data        TYPE /accgo/cas_s_mwc_ret_doc_ui
+                      CHANGING lo_protocol        TYPE REF TO /accgo/cl_cas_appl_protocol.
+
+  .
+*----------------------------------------------------------------------*
+* Copyright  2012 SAP AG. All rights reserved                          *
+*----------------------------------------------------------------------*
+* Method Name         : GET_FADS_FOR_RAD                               *
+* Method description  : To create Quantity frame work shadow documents
+*                       DB calss object instance                       *                                  *
+*----------------------------------------------------------------------*
+* DDD         YYYYMMDD           NNNNNN             TTTTTT             *
+* DDD         YYYYMMDD           NNNNNN             TTTTTT             *
+*----------------------------------------------------------------------*
+*-->  Data declaration
+*-->  Local Objects
+  DATA :  lo_appdoc_mgr     TYPE REF TO /accgo/if_cas_appdoc_mgr,
+          lo_appldoc_bl     TYPE REF TO /accgo/if_cas_appdoc_bl,
+          lo_appdata_bl     TYPE REF TO /accgo/cl_cas_appdata_bl,
+          lo_assgmt_manager TYPE REF TO if_wb2_assgmt_manager,
+          lo_x_appl_error   TYPE REF TO /accgo/cx_cas_appl_error,
+          lo_x_message      TYPE REF TO cx_wb2_message,
+          lo_cmn_config     TYPE REF TO /accgo/cl_cmn_config_constants.
+*-->  Local Variables
+  DATA:   lv_error      TYPE abap_bool,
+          lv_string     TYPE string,
+          lv_lines      TYPE i,
+          lv_return_qty TYPE wlf_asgt_dist_quantity_ind,
+          lv_of_qty     TYPE wlf_asgt_dist_quantity_ind,
+          lv_type_text  TYPE string,
+          lv_item_guid  TYPE /accgo/e_appldoc_item_guid,
+          lv_status     TYPE /accgo/e_appldoc_statusmgt,
+          lv_stats      TYPE /accgo/e_cmn_stm_status,
+          lv_vbeln      TYPE vbeln,
+          lv_assert     TYPE xfeld.
+*-->  Local Structures
+  DATA :  lwa_s_shd_item_key      TYPE wb2_s_shd_item_key,
+          lwa_s_fad_doc_key	      TYPE /accgo/cas_s_qf_shd_key,
+          lwa_s_shd_item          TYPE wb2_s_shd_item,
+          lwa_s_assgmt            TYPE wb2_s_assgmt,
+          lwa_s_assgmt_com        TYPE wb2_s_assgmt_com,
+          lwa_message             TYPE /accgo/cas_s_message,
+          lwa_s_fad_data          TYPE /accgo/cas_s_return_fads,
+          lwa_s_pr_lot_distr_data TYPE /accgo/cas_s_return_asgmt_bl,
+          lwa_s_pr_lot_asgnmt     TYPE /accgo/cas_s_return_asgmt_bl,
+          lwa_s_of_prasp_com      TYPE wb2_s_prasp_com,
+          lwa_s_main_prasp_com    TYPE wb2_s_prasp_com,
+          lwa_s_qf_asd_com        TYPE /accgo/cas_s_qf_asd_com,
+          lwa_s_com_item_key      TYPE wb2_s_com_key,
+          lwa_s_message           TYPE wb2_s_message,
+          lwa_s_appdoc_item       TYPE /accgo/cas_s_cai_bl,
+          lwa_appdoc_status       TYPE /accgo/cas_s_cai_status,
+          lwa_appdoc_hdr_key      TYPE /accgo/cas_s_cah_key_bl,
+          lwa_appdoc_item_key     TYPE /accgo/cas_s_cai_key_bl,
+          lwa_vbuk                TYPE vbuk.
+*-->  Local Tables
+  DATA : lt_assgmt               TYPE wb2_th_assgmt,
+         lt_qf_asd_com           TYPE /accgo/cas_tt_qf_asd_com,
+         lt_qf_asd_com_t         TYPE TABLE OF /accgo/cas_s_qf_asd_com,
+         lt_rad_doc_key          TYPE /accgo/cas_tt_qf_shd_key,
+         lt_messages             TYPE /accgo/cas_tt_message,
+         lt_prasp_com            TYPE wb2_ts_prasp_com,
+         lt_qf_asd_key           TYPE /accgo/cas_tt_qf_asd_rad_key,
+         lt_appldoc_item         TYPE /accgo/cas_tt_cai_bl,
+         lt_appldoc_item_t       TYPE TABLE OF /accgo/cas_s_cai_bl,
+         lt_appdoc_item_key      TYPE /accgo/cas_tt_cai_key_bl,
+         lt_filtered_appdoc_item TYPE /accgo/cas_tt_cai_bl,
+         lt_appdoc_status        TYPE /accgo/cas_tt_cai_status,
+         lt_vbuk                 TYPE STANDARD TABLE OF vbuk   WITH DEFAULT KEY,
+         lt_vbeln                TYPE TABLE OF vbeln.
+*-->  Field Symbols
+  FIELD-SYMBOLS:
+  <lwa_s_pr_lot_distr_data> TYPE /accgo/cas_s_return_asgmt_bl.
+
+  CLEAR : lt_appldoc_item_t, lt_appldoc_item.
+*----------------------------------------------------------------------*
+*-->  Code Start
+*----------------------------------------------------------------------*
+*Check if delivery document is reversed for the return appdoc, stop returns process in this case
+*User may reverse the goods movement for unlinked appdoc in VL09
+  lv_vbeln = im_s_rad_data-pred_doc2.
+  APPEND lv_vbeln TO lt_vbeln.
+  IF NOT lt_vbeln IS INITIAL.
+    CALL FUNCTION 'SD_VBUK_ARRAY_READ'
+      TABLES
+        it_vbuk_key           = lt_vbeln
+        et_vbuk               = lt_vbuk
+      EXCEPTIONS
+        records_not_found     = 1
+        records_not_requested = 2
+        OTHERS                = 3.
+  ENDIF.
+  IF NOT lt_vbuk IS INITIAL.
+    READ TABLE lt_vbuk INTO lwa_vbuk INDEX 1.
+    IF sy-subrc = 0 AND lwa_vbuk-wbstk = /accgo/if_cas_constants=>gc_not_yet_processed.
+      lv_error = abap_true.
+    ENDIF.
+  ELSE.
+    lv_error = abap_true.
+  ENDIF.
+  IF lv_error = abap_true.
+    MESSAGE e913(/accgo/cas_fllw_msg).
+  ENDIF.
+  CLEAR: lv_error.
+  " get the instance of config class
+  lo_cmn_config = /accgo/cl_cmn_config_constants=>get_instance( ).
+  IF lo_cmn_config IS BOUND.
+    lv_assert = lo_cmn_config->get_constant_value( im_v_constant_name = /accgo/if_cas_constants=>gc_assert_appl_config  ).
+  ENDIF.
+
+  lo_appdoc_mgr = /accgo/cl_cas_appdoc_mgr=>get_instance( ).
+*----------------------------------------------------------------------*
+*-->  Get Appdoc data from selection
+*----------------------------------------------------------------------*
+  lo_appdoc_mgr->get_appdoc_data_by_sel( EXPORTING  im_s_appdoc_sel = im_s_selection_data
+                                         IMPORTING  ex_t_appdoc_i   = lt_appldoc_item ).
+  lt_appldoc_item_t = lt_appldoc_item.
+  IF lt_appldoc_item_t IS INITIAL.
+    MESSAGE e730(/accgo/cas_fllw_msg) INTO lv_string.
+*    add_message( CHANGING ch_o_protocol = ex_o_protocol ).
+    RETURN.
+  ENDIF.
+*----------------------------------------------------------------------*
+* Filter Application Document items which are finally settled
+*----------------------------------------------------------------------*
+  DELETE lt_appldoc_item_t WHERE root_item IS INITIAL.
+  LOOP AT lt_appldoc_item_t INTO lwa_s_appdoc_item.
+*Get header key of Appdoc
+    lwa_appdoc_hdr_key-appldoc = lwa_s_appdoc_item-appldoc.
+*Get Application BL instance
+    TRY.
+        CALL METHOD lo_appdoc_mgr->get_appdoc
+          EXPORTING
+            im_s_appdoc_hdr_key = lwa_appdoc_hdr_key
+          RECEIVING
+            re_r_appdoc         = lo_appldoc_bl.
+      CATCH /accgo/cx_cas_appl_error ." $appl_exception, handled in below code
+    ENDTRY.
+    IF lo_appldoc_bl IS NOT BOUND AND lv_assert = /accgo/if_cas_constants=>gc_assert_appl.
+      RAISE EXCEPTION TYPE cx_fatal_exception.
+    ENDIF.
+*Prepare Appdoc item key
+    lwa_appdoc_item_key-appldoc  = lwa_s_appdoc_item-appldoc.
+    lwa_appdoc_item_key-item     = lwa_s_appdoc_item-item.
+    lwa_appdoc_item_key-side     = lwa_s_appdoc_item-side.
+    lwa_appdoc_item_key-sub_item = lwa_s_appdoc_item-sub_item.
+
+*Get Appdoc item GUID
+    TRY.
+        CALL METHOD lo_appldoc_bl->get_item_guid_by_key
+          EXPORTING
+            im_s_appdoc_item_key = lwa_appdoc_item_key
+          RECEIVING
+            re_v_item_guid       = lv_item_guid.
+      CATCH /accgo/cx_cas_appl_error ." no EXception hanlding is required, guid should be present $appl_exception
+    ENDTRY.
+*Get settlement status
+    TRY.
+        CALL METHOD lo_appldoc_bl->/accgo/if_cas_appdoc_stl_sts~get_item_stl_status
+          EXPORTING
+            im_v_object_guid_item = lv_item_guid
+          RECEIVING
+            re_v_status_item      = lv_status.
+      CATCH /accgo/cx_cas_fatal_error ." $appl_exception, exception handling not required
+    ENDTRY.
+*Get domain value of the status
+    CALL METHOD /accgo/cl_cas_appl_cust=>read_ext_appdoc_status
+      EXPORTING
+        im_v_sysstatus    = lv_status
+      RECEIVING
+        re_v_appdocstatus = lv_stats.
+
+    IF lv_stats = '15'. "Revenue recognized
+      INSERT lwa_s_appdoc_item INTO TABLE lt_filtered_appdoc_item.
+    ENDIF.
+  ENDLOOP.
+*----------------------------------------------------------------------*
+* Reset tha assignment Manager Instance
+*----------------------------------------------------------------------*
+  cl_wb2_assgmt_manager=>reset( ).
+  /accgo/cl_cas_qf_asg_manager=>reset( ).
+  cl_wb2_com_item_factory=>reset( ).
+*----------------------------------------------------------------------*
+*--> Get appdata instance
+*----------------------------------------------------------------------*
+  lo_appdata_bl = /accgo/cl_cas_appdata_bl=>get_instance( ).
+  lo_appdata_bl->reset( ).
+*----------------------------------------------------------------------*
+* Get Assignment Manager Framework instance
+*----------------------------------------------------------------------*
+  lo_assgmt_manager = cl_wb2_assgmt_manager=>get_instance( ).
+
+  IF lt_filtered_appdoc_item IS INITIAL.
+    MESSAGE e894(/accgo/cas_fllw_msg).
+  ELSE.
+    lv_lines = lines( lt_filtered_appdoc_item ).
+    LOOP AT lt_filtered_appdoc_item INTO lwa_s_appdoc_item.
+*----------------------------------------------------------------------*
+* Get the Shadow Commodity Item for thie Pricing Aspect
+*----------------------------------------------------------------------*
+      lwa_s_shd_item_key-type       = /accgo/if_cas_constants=>gc_shd_doc_type_app.
+      lwa_s_shd_item_key-document   = lwa_s_appdoc_item-appldoc.
+      lwa_s_shd_item_key-item       = lwa_s_appdoc_item-item.
+      lwa_s_shd_item_key-side       = lwa_s_appdoc_item-side.
+      lwa_s_shd_item_key-sub_item   = lwa_s_appdoc_item-sub_item.
+      CLEAR : lo_x_message.
+      TRY.
+          lwa_s_shd_item = lo_assgmt_manager->get_shd_item( is_key               = lwa_s_shd_item_key
+                                                            iv_with_lock         = abap_false
+                                                            iv_check_authority   = space ).
+        CATCH cx_wb2_lock_error
+              cx_wb2_no_shd_item
+              cx_wb2_no_authority INTO lo_x_message.
+          IF lo_x_message IS BOUND.
+            lwa_s_message = lo_x_message->mo_protocol->get_first_message( ).
+            MESSAGE ID lwa_s_message-msgid TYPE lwa_s_message-msgty NUMBER lwa_s_message-msgno
+                                           WITH lwa_s_message-msgv1 lwa_s_message-msgv2
+                                                lwa_s_message-msgv3 lwa_s_message-msgv4
+                                           INTO lv_string.
+*            add_message( CHANGING ch_o_protocol = ex_o_protocol ).
+            CONTINUE.
+          ENDIF.
+      ENDTRY.
+      TRY.
+**----------------------------------------------------------------------*
+**--> Check the Assignments of this shadow item
+**----------------------------------------------------------------------*
+          IF lo_assgmt_manager->has_assignment( iv_type     = lwa_s_shd_item_key-type
+                                                iv_document = lwa_s_shd_item_key-document
+                                                iv_item     = lwa_s_shd_item_key-item
+                                                iv_side     = lwa_s_shd_item_key-side
+                                                iv_sub_item = lwa_s_shd_item_key-sub_item ) = abap_false.
+            MESSAGE e686(/accgo/cas_fllw_msg) WITH lwa_s_appdoc_item-appldoc lwa_s_appdoc_item-item
+                                              INTO lv_string.
+*            add_message( CHANGING ch_o_protocol = ex_o_protocol ).
+            CONTINUE.
+          ENDIF.
+        CATCH cx_wb2_lock_error INTO lo_x_message.
+          IF lo_x_message IS BOUND.
+            lwa_s_message = lo_x_message->mo_protocol->get_first_message( ).
+            MESSAGE ID lwa_s_message-msgid TYPE lwa_s_message-msgty NUMBER lwa_s_message-msgno
+                                           WITH lwa_s_message-msgv1 lwa_s_message-msgv2
+                                                lwa_s_message-msgv3 lwa_s_message-msgv4
+                                           INTO lv_string.
+*            add_message( CHANGING ch_o_protocol = ex_o_protocol ).
+            CONTINUE.
+          ENDIF.
+      ENDTRY.
+*----------------------------------------------------------------------*
+* Get the assignments for Shadow Commodity Item in read mode
+*----------------------------------------------------------------------*
+      CLEAR : lt_assgmt.
+      lo_assgmt_manager->get_assgmts_for_shd_item( EXPORTING is_shd_item         = lwa_s_shd_item
+                                                             iv_with_lock        = abap_false
+                                                   IMPORTING eth_assgmt          = lt_assgmt ).
+*----------------------------------------------------------------------*
+*Export The entries
+*----------------------------------------------------------------------*
+      LOOP AT lt_assgmt INTO lwa_s_assgmt.
+        "Nested loop processing is required to execute logic
+*----------------------------------------------------------------------*
+* Read the keys and store in table
+*----------------------------------------------------------------------*
+        TRY.
+            CLEAR: lwa_s_assgmt_com, lo_x_message.
+            lwa_s_assgmt-o_assgmt->get_data( EXPORTING iv_a_guid = lwa_s_assgmt-guid
+                                             IMPORTING es_data   = lwa_s_assgmt_com ).
+          CATCH cx_wb2_no_assgmt INTO lo_x_message.
+            IF lo_x_message IS BOUND OR
+               lwa_s_assgmt_com-/accgo/is_final IS INITIAL.
+              CONTINUE.
+            ENDIF.
+        ENDTRY.
+*----------------------------------------------------------------------*
+*-->Call BADI
+*----------------------------------------------------------------------*
+        TRY.
+            /accgo/cl_cas_appl_enhance=>returns_check_data( im_s_assgmt_com = lwa_s_assgmt_com ).
+          CATCH /accgo/cx_cas_appl_error INTO lo_x_appl_error.
+            lo_x_appl_error->go_protocol->get_messages( IMPORTING ex_t_messages = lt_messages ).
+*            log_messages( EXPORTING im_t_msg      = lt_messages
+*                          IMPORTING ex_o_protocol = ex_o_protocol ).
+*            LOOP AT lt_messages INTO lwa_message.
+*              MESSAGE ID lwa_message-msgid TYPE lwa_message-msgty NUMBER lwa_message-msgno
+*                                           WITH lwa_message-msgv1 lwa_message-msgv2
+*                                                lwa_message-msgv3 lwa_message-msgv4
+*                                           INTO lv_string.
+*              add_message( CHANGING ch_o_protocol = ex_o_protocol ).
+*            ENDLOOP.
+            CONTINUE.
+        ENDTRY.
+*----------------------------------------------------------------------*
+*--> Build the commodity item data
+*----------------------------------------------------------------------*
+        CLEAR: lt_rad_doc_key, lt_rad_doc_key, lt_qf_asd_key, lt_qf_asd_key.
+        CLEAR: lwa_s_com_item_key, lwa_s_main_prasp_com, lwa_s_of_prasp_com.
+        CLEAR: lv_return_qty, lv_of_qty.
+        lwa_s_com_item_key-tkonn     = lwa_s_assgmt_com-tkonn.
+        lwa_s_com_item_key-tposn     = lwa_s_assgmt_com-tposn.
+        lwa_s_com_item_key-side      = lwa_s_assgmt_com-side_to.
+        lwa_s_com_item_key-tposn_com = lwa_s_assgmt_com-tposn_com.
+
+*----------------------------------------------------------------------*
+*--> Get pricing distribution details for FAD
+*----------------------------------------------------------------------*
+*        get_com_prc_details( im_s_com_item_key   = lwa_s_com_item_key
+*                             im_v_matnr          = lwa_s_appdoc_item-matnr ).
+*
+*        read_fad_prc_distribution( EXPORTING
+*                                im_s_appl_item     = lwa_s_appdoc_item
+*                             IMPORTING
+*                                ex_t_prasp_com     = lt_prasp_com
+*                                ex_t_prc_dist_data = t_prc_dist_data ).
+*----------------------------------------------------------------------*
+*--> Get Overfill Pricing lot
+*----------------------------------------------------------------------*
+*        lwa_s_of_prasp_com  = get_of_pricing_lot( im_s_com_item_key = lwa_s_com_item_key
+*                                                  im_s_assgmt_com   = lwa_s_assgmt_com ).
+        IF  lt_prasp_com IS NOT INITIAL OR
+            lwa_s_of_prasp_com   IS NOT INITIAL.
+          MOVE-CORRESPONDING  lwa_s_shd_item_key TO lwa_s_fad_doc_key.
+*----------------------------------------------------------------------*
+*-->GET RADS for FADS
+*----------------------------------------------------------------------*
+*          get_returns_for_fad( EXPORTING im_v_counter     = lv_lines
+*                                         im_s_fad_doc_key = lwa_s_fad_doc_key
+*                               RECEIVING
+*                                         re_t_qf_asd_com  = lt_qf_asd_com ).
+
+          lt_qf_asd_com_t = lt_qf_asd_com.
+*----------------------------------------------------------------------*
+*--> Check already Returns exist for the main Pricing lot
+*----------------------------------------------------------------------*
+          IF lt_qf_asd_com_t IS NOT INITIAL.
+*----------------------------------------------------------------------*
+*--> Get Return Quantity
+*----------------------------------------------------------------------*
+*            lv_return_qty = calculate_ret_qty( im_t_asd_com   = lt_qf_asd_com
+*                                               im_t_prasp_com = lt_prasp_com ).
+            IF lv_return_qty = lwa_s_assgmt_com-assgd_quan.
+              CLEAR: lwa_s_main_prasp_com.
+            ENDIF.
+          ENDIF.
+
+          IF lwa_s_of_prasp_com IS NOT INITIAL AND
+             lt_qf_asd_com_t      IS NOT INITIAL.
+*----------------------------------------------------------------------*
+*--> Check already Returns exist for the Overfill Pricing lot
+*----------------------------------------------------------------------*
+            CLEAR lwa_s_qf_asd_com.   "$appl_Wa
+            READ TABLE lt_qf_asd_com_t INTO lwa_s_qf_asd_com WITH KEY pr_aspect = lwa_s_of_prasp_com-pr_aspect
+                                                                    pr_count  = lwa_s_of_prasp_com-pr_count.
+            IF sy-subrc = 0.
+              CLEAR : lwa_s_of_prasp_com.
+              lv_of_qty = lwa_s_assgmt_com-/accgo/of_qty.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+
+        IF  lt_prasp_com IS NOT INITIAL OR
+            lwa_s_of_prasp_com   IS NOT INITIAL.
+*----------------------------------------------------------------------*
+*-->Update FAD Documnets
+*----------------------------------------------------------------------*
+          lwa_s_fad_data-appldoc     =  lwa_s_assgmt_com-document_from.
+          lwa_s_fad_data-item        =  lwa_s_assgmt_com-item_from.
+          lwa_s_fad_data-item_qty    =  lwa_s_appdoc_item-delv_qty_raw.
+          lwa_s_fad_data-item_uom    =  lwa_s_appdoc_item-delv_uom.
+          lwa_s_fad_data-tkonn       =  lwa_s_assgmt_com-tkonn.
+          lwa_s_fad_data-tposn       =  lwa_s_assgmt_com-tposn.
+          lwa_s_fad_data-tposn_com   =  lwa_s_assgmt_com-tposn_com.
+          lwa_s_fad_data-appl_qty    =  lwa_s_assgmt_com-assgd_quan.
+          lwa_s_fad_data-uom         =  lwa_s_assgmt_com-assgd_uom.
+          lwa_s_fad_data-distrb_qty  =  lwa_s_assgmt_com-assgd_quan - lv_return_qty - lv_of_qty.
+          INSERT lwa_s_fad_data INTO TABLE ex_t_fad_data.
+          CLEAR : lwa_s_fad_data,lwa_s_pr_lot_asgnmt.
+*----------------------------------------------------------------------*
+*Update Main line item
+*----------------------------------------------------------------------*
+          lwa_s_pr_lot_asgnmt-update_ind = abap_true.
+          MOVE-CORRESPONDING:  lwa_s_assgmt     TO  lwa_s_pr_lot_asgnmt-pl_asgmt,
+                               lwa_s_assgmt_com TO  lwa_s_pr_lot_asgnmt.
+          lv_type_text = cl_wb2_ddic_values=>get_shd_doc_type_text( lwa_s_assgmt_com-type_from ).
+          lwa_s_pr_lot_asgnmt-type_text = lv_type_text.
+          lwa_s_pr_lot_asgnmt-total_distrb_qty = lwa_s_assgmt_com-assgd_quan - lv_return_qty - lv_of_qty.
+          INSERT lwa_s_pr_lot_asgnmt INTO TABLE ex_t_return_asgmt_bl.
+*----------------------------------------------------------------------*
+*Update Main Pricing lot item
+*----------------------------------------------------------------------*
+          IF lt_prasp_com IS NOT INITIAL.
+*            update_pricing_aspect(
+*            EXPORTING
+*              im_v_ret_qty         = lv_return_qty
+*              im_s_assgmt          = lwa_s_assgmt
+*              im_s_assgmt_com      = lwa_s_assgmt_com
+*              im_t_prasp_com       = lt_prasp_com
+*            IMPORTING
+*              ex_t_return_asgmt_bl = ex_t_return_asgmt_bl ).
+          ENDIF.
+*----------------------------------------------------------------------*
+*Update Overfill Pricing lot item
+*----------------------------------------------------------------------*
+          IF lwa_s_of_prasp_com IS NOT INITIAL.
+            MOVE-CORRESPONDING : lwa_s_of_prasp_com TO lwa_s_pr_lot_distr_data,
+                                 lwa_s_assgmt       TO lwa_s_pr_lot_distr_data-pl_asgmt.
+            lwa_s_pr_lot_distr_data-prasp_type = /accgo/if_cas_constants=>gc_overfill.
+            lwa_s_pr_lot_distr_data-distrb_qty = lwa_s_pr_lot_distr_data-availble_qty = lwa_s_assgmt_com-/accgo/of_qty.
+            INSERT lwa_s_pr_lot_distr_data INTO TABLE ex_t_return_asgmt_bl.
+            CLEAR :  lwa_s_pr_lot_distr_data.
+          ENDIF.
+        ENDIF.
+      ENDLOOP.
+    ENDLOOP.
+  ENDIF.
+*----------------------------------------------------------------------*
+*-->  Code End
+*----------------------------------------------------------------------*
+ENDFORM.
+
+
+
+
+*  DATA:         lo_return      TYPE REF TO data,
+*                ls_ret_adto_nf TYPE /sproagac/s_retadtonf.
+*  " Constants
+*  CONSTANTS: lc_brf      TYPE fdt_name VALUE '/SPROAGAC/RET_ADTO_NF', " Aplication Name
+*             lc_function TYPE fdt_name VALUE 'FNC_RETADTONF'.         " Function Name
+*  TRY.
+*      DATA(lwr_app_id) = /sproagxx/cl_brf_manager=>get_application_instance(
+*         i_application_name = lc_brf
+*       ).
+*
+*      DATA(lwr_adto_nf) = NEW /sproagxx/cl_brf_manager(
+*        i_application_id = lwr_app_id->mv_id
+*      ).
+*
+*      lo_return = lwr_adto_nf->call_function(
+*        i_fnc_name        = lc_function
+*        it_context_values = VALUE #( ( name = 'WERKS_D' a_value = '1000' ) )
+*      ).
+*
+*      ASSIGN lo_return->* TO FIELD-SYMBOL(<lw_adto_nf>).
+*      MOVE-CORRESPONDING <lw_adto_nf> TO ls_ret_adto_nf.
+*
+*    CATCH /SPROAGXX/CX_BRF_SETTINGS INTO DATA(lx).
+*      MESSAGE lx TYPE 'E'.
+*  ENDTRY.
+*  IF  p_arq IS NOT INITIAL.
+*    DATA: lv_teste TYPE string VALUE 'f_modifica_pasta'.
+*  perform (lv_teste) IN PROGRAM sy-repid.
+*
+*  ENDIF.
+*&---------------------------------------------------------------------*
+*&      Form  F_BUSCA_ARQUIVO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM f_busca_arquivo USING  i_arq.
+
+  DATA: l_rc    TYPE i,
+        tl_file TYPE filetable.
+
+  FIELD-SYMBOLS: <fs_file> LIKE LINE OF tl_file.
+
+  CALL METHOD cl_gui_frontend_services=>file_open_dialog
+    EXPORTING
+      window_title            = 'Upload arquivo'
+    CHANGING
+      file_table              = tl_file
+      rc                      = l_rc
+    EXCEPTIONS
+      file_open_dialog_failed = 1
+      cntl_error              = 2
+      error_no_gui            = 3
+      not_supported_by_gui    = 4
+      OTHERS                  = 5.
+
+  IF  sy-subrc IS NOT INITIAL.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+          WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ELSE.
+
+    READ TABLE tl_file ASSIGNING <fs_file> INDEX 1.
+    IF sy-subrc IS INITIAL.
+      MOVE <fs_file>-filename TO i_arq.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.                    " F_BUSCA_ARQUIVO
+*&---------------------------------------------------------------------*
+*&      Form  F_MODIFICA_PASTA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM f_modifica_pasta .
+  TYPES: BEGIN OF ty_arq,
+           string TYPE string,
+         END OF ty_arq.
+  DATA: t_arq   TYPE TABLE OF ty_arq,
+        lv_file TYPE string.
+
+*  lv_file = p_arq.
+  CALL FUNCTION 'GUI_UPLOAD'
+    EXPORTING
+      filename = lv_file
+*     FILETYPE = 'ASC'
+*     HAS_FIELD_SEPARATOR           = ' '
+*     HEADER_LENGTH                 = 0
+*     READ_BY_LINE                  = 'X'
+*     DAT_MODE = ' '
+*     CODEPAGE = ' '
+*     IGNORE_CERR                   = ABAP_TRUE
+*     REPLACEMENT                   = '#'
+*     CHECK_BOM                     = ' '
+*     VIRUS_SCAN_PROFILE            =
+*     NO_AUTH_CHECK                 = ' '
+*   IMPORTING
+*     FILELENGTH                    =
+*     HEADER   =
+    TABLES
+      data_tab = t_arq
+*   CHANGING
+*     ISSCANPERFORMED               = ' '
+*   EXCEPTIONS
+*     FILE_OPEN_ERROR               = 1
+*     FILE_READ_ERROR               = 2
+*     NO_BATCH = 3
+*     GUI_REFUSE_FILETRANSFER       = 4
+*     INVALID_TYPE                  = 5
+*     NO_AUTHORITY                  = 6
+*     UNKNOWN_ERROR                 = 7
+*     BAD_DATA_FORMAT               = 8
+*     HEADER_NOT_ALLOWED            = 9
+*     SEPARATOR_NOT_ALLOWED         = 10
+*     HEADER_TOO_LONG               = 11
+*     UNKNOWN_DP_ERROR              = 12
+*     ACCESS_DENIED                 = 13
+*     DP_OUT_OF_MEMORY              = 14
+*     DISK_FULL                     = 15
+*     DP_TIMEOUT                    = 16
+*     OTHERS   = 17
+    .
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+*  lv_file = p_para.
+  CALL FUNCTION 'GUI_DOWNLOAD'
+    EXPORTING
+*     BIN_FILESIZE                    =
+      filename = lv_file
+*     FILETYPE = 'ASC'
+*     APPEND   = ' '
+*     WRITE_FIELD_SEPARATOR           = ' '
+*     HEADER   = '00'
+*     TRUNC_TRAILING_BLANKS           = ' '
+*     WRITE_LF = 'X'
+*     COL_SELECT                      = ' '
+*     COL_SELECT_MASK                 = ' '
+*     DAT_MODE = ' '
+*     CONFIRM_OVERWRITE               = ' '
+*     NO_AUTH_CHECK                   = ' '
+*     CODEPAGE = ' '
+*     IGNORE_CERR                     = ABAP_TRUE
+*     REPLACEMENT                     = '#'
+*     WRITE_BOM                       = ' '
+*     TRUNC_TRAILING_BLANKS_EOL       = 'X'
+*     WK1_N_FORMAT                    = ' '
+*     WK1_N_SIZE                      = ' '
+*     WK1_T_FORMAT                    = ' '
+*     WK1_T_SIZE                      = ' '
+*     WRITE_LF_AFTER_LAST_LINE        = ABAP_TRUE
+*     SHOW_TRANSFER_STATUS            = ABAP_TRUE
+*     VIRUS_SCAN_PROFILE              = '/SCET/GUI_DOWNLOAD'
+*   IMPORTING
+*     FILELENGTH                      =
+    TABLES
+      data_tab = t_arq
+*     FIELDNAMES                      =
+*   EXCEPTIONS
+*     FILE_WRITE_ERROR                = 1
+*     NO_BATCH = 2
+*     GUI_REFUSE_FILETRANSFER         = 3
+*     INVALID_TYPE                    = 4
+*     NO_AUTHORITY                    = 5
+*     UNKNOWN_ERROR                   = 6
+*     HEADER_NOT_ALLOWED              = 7
+*     SEPARATOR_NOT_ALLOWED           = 8
+*     FILESIZE_NOT_ALLOWED            = 9
+*     HEADER_TOO_LONG                 = 10
+*     DP_ERROR_CREATE                 = 11
+*     DP_ERROR_SEND                   = 12
+*     DP_ERROR_WRITE                  = 13
+*     UNKNOWN_DP_ERROR                = 14
+*     ACCESS_DENIED                   = 15
+*     DP_OUT_OF_MEMORY                = 16
+*     DISK_FULL                       = 17
+*     DP_TIMEOUT                      = 18
+*     FILE_NOT_FOUND                  = 19
+*     DATAPROVIDER_EXCEPTION          = 20
+*     CONTROL_FLUSH_ERROR             = 21
+*     OTHERS   = 22
+    .
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_9000  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE user_command_9000 INPUT.
+
+  LEAVE TO SCREEN 0.
+
+ENDMODULE.
